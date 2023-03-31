@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Jogo da Velha </title>
+	<style>
+		body {
+			font-family: Arial, sans-serif;
+			text-align: center;
+		}
+
+		h1 {
+			margin-top: 50px;
+			font-size: 36px;
+		}
+
+		table {
+			margin: auto;
+			margin-top: 50px;
+			border-collapse: collapse;
+			border: 2px solid black;
+			width: 300px;
+			height: 300px;
+			table-layout: fixed;
+		}
+
+		td {
+			border: 1px solid black;
+			width: 100px;
+			height: 100px;
+			text-align: center;
+			vertical-align: middle;
+			font-size: 72px;
+			cursor: pointer;
+		}
+
+		#status {
+			margin-top: 50px;
+			font-size: 24px;
+		}
+	</style>
+</head>
+<body>
+	<h1>Jogo da Velha </h1>
+	<table id="board">
+		<tr>
+			<td id="0"></td>
+			<td id="1"></td>
+			<td id="2"></td>
+		</tr>
+		<tr>
+			<td id="3"></td>
+			<td id="4"></td>
+			<td id="5"></td>
+		</tr>
+		<tr>
+			<td id="6"></td>
+			<td id="7"></td>
+			<td id="8"></td>
+		</tr>
+	</table>
+	<div id="status"></div>
+	<script>
+		var board = ['', '', '', '', '', '', '', '', ''];
+		var players = ['X', 'O'];
+		var currentPlayer = players[Math.floor(Math.random() * players.length)];
+		var gameOver = false;
+
+		function drawBoard() {
+			for (var i = 0; i < board.length; i++) {
+				document.getElementById(i.toString()).innerHTML = board[i];
+			}
+		}
+
+		function checkWin() {
+			var winningCombinations = [
+				[0, 1, 2],
+				[3, 4, 5],
+				[6, 7, 8],
+				[0, 3, 6],
+				[1, 4, 7],
+				[2, 5, 8],
+				[0, 4, 8],
+				[2, 4, 6]
+			];
+
+			for (var i = 0; i < winningCombinations.length; i++) {
+				var [a, b, c] = winningCombinations[i];
+				if (board[a] !== '' && board[a] === board[b] && board[a] === board[c]) {
+					return board[a];
+				}
+			}
+
+			if (!board.includes('')) {
+				return 'tie';
+			}
+
+			return null;
+		}
+
+		function makeMove(position, player) {
+			if (board[position] === '') {
+				board[position] = player;
+				drawBoard();
+				var winner = checkWin();
+				if (winner !== null) {
+					gameOver = true;
+					if (winner === 'tie') {
+						document.getElementById('status').innerHTML = 'Empate!';
+					} else {
+						document.getElementById('status').innerHTML = 'O jogador ' + winner + ' venceu!'; }
+                    } return true; } 
+                    
+                    else {
+                        return false; } }
+
+function getNextMove() {
+		// implementação da inteligência artificial
+		var availableMoves = [];
+		for (var i = 0; i < board.length; i++) {
+			if (board[i] === '') {
+				availableMoves.push(i);
+			}
+		}
+
+		var randomMove = availableMoves[Math.floor(Math.random() * availableMoves.length)];
+		return randomMove;
+	}
+
+	function play() {
+		if (currentPlayer === 'X') {
+			var position = parseInt(prompt('Digite a posição para jogar (0 a 8): '));
+			if (makeMove(position, currentPlayer)) {
+				currentPlayer = 'O';
+			} else {
+				alert('Posição inválida!');
+			}
+		} else {
+			var position = getNextMove();
+			makeMove(position, currentPlayer);
+			currentPlayer = 'X';
+		}
+	}
+
+	document.getElementById('board').addEventListener('click', function(event) {
+		if (!gameOver) {
+			var position = event.target.id;
+			if (makeMove(position, currentPlayer)) {
+				if (currentPlayer === 'X') {
+					currentPlayer = 'O';
+				} else {
+					currentPlayer = 'X';
+				}
+				if (!gameOver && currentPlayer === 'O') {
+					play();
+				}
+			}
+		}
+	});
+
+	drawBoard();
+
+	if (currentPlayer === 'O') {
+		play();
+	}
+</script>
+</body>
+</html>
