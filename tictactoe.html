@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jogo da Velha com Monad</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background-color: #f0f0f0;
+            margin: 0;
+        }
+        #board {
+            display: grid;
+            grid-template-columns: repeat(3, 100px);
+            grid-gap: 5px;
+            margin-bottom: 20px;
+        }
+        .cell {
+            width: 100px;
+            height: 100px;
+            background-color: white;
+            border: 2px solid black;
+            font-size: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        .cell:hover {
+            background-color: #e0e0e0;
+        }
+        #message {
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+        #level, #wins {
+            font-size: 20px;
+            margin-bottom: 10px;
+        }
+        #walletSelect, #connectWallet, #startButton, #claimReward {
+            padding: 10px 20px;
+            font-size: 18px;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            margin: 5px;
+        }
+        #walletSelect:hover, #connectWallet:hover, #startButton:hover, #claimReward:hover {
+            background-color: #45a049;
+        }
+        #claimReward:disabled, #startButton:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+    </style>
+    <!-- Usando um CDN confiável para ethers.js -->
+    <script async src="https://unpkg.com/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+</head>
+<body>
+    <h1>Jogo da Velha</h1>
+    <div id="level">Nível: 1</div>
+    <div id="wins">Vitórias: 0</div>
+    <div id="message">Selecione a carteira e conecte para jogar!</div>
+    <select id="walletSelect">
+        <option value="metamask">MetaMask</option>
+        <option value="rabby">Rabby</option>
+        <option value="okx">OKX Wallet</option>
+    </select>
+    <button id="connectWallet">Conectar Carteira</button>
+    <div id="board"></div>
+    <button id="startButton" disabled>Iniciar Jogo</button>
+    <button id="claimReward" disabled>Resgatar Recompensa</button>
+
+    <script>
+        const board = document.getElementById("board");
+        const message = document.getElementById("message");
+        const levelDisplay = document.getElementById("level");
+        const winsDisplay = document.getElementById("wins");
+        const startButton = document.getElementById("startButton");
+        const connectWalletButton = document.getElementById("connectWallet");
+        const claimRewardButton = document.getElementById("claimReward");
+        const walletSelect = document.getElementById("walletSelect");
+        let cells = [];
+        let currentPlayer = "X";
+        let gameActive = false;
+        let level = 1;
+        let wins = 0;
+        let provider, signer, contract;
+
+        // Configuração do contrato (ajuste o endereço e ABI conforme necessário)
+        const contractAddress = "0x78bFaFE565C6fECEfDfABA540137ee96933be17b"; // Substitua pelo endereço real
+        const contractABI = [
+            "function payEntryFee(uint level) public payable",
+            "function recordWin(address player, uint level) public",
+            "function claimReward() public",
+            "function playerWins(address) public view returns (uint)",
+            "function poolBalance() public view returns (uint)"
+        ];
+
+        // Função para esperar a carteira carregar (10 segundos)
+        function waitForWallet() {
+            return new Promise((resolve, reject) => {
+                if (typeof window.ethereum !== "undefined") {
+                    resolve(window.ethereum);
+                } else {
+                    const interval = setInterval(() => {
+                        if (typeof window.ethereum !== "undefined") {
+                            clearInterval(interval);
+                            resolve(window.ethereum);
+                        }
+                    }, 500);
+                    setTimeout(() => {
+                        clearInterval(interval);
+                        reject(new Error("Carteira não carregou a tempo."));
+                    }, 10000); // Tempo limite de 10 segundos
+                }
+            });
+        }
+
+        // Função para esperar o ethers.js carregar
+        function waitForEthers() {
+            return new Promise((resolve, reject) => {
+                if (typeof ethers !== "undefined") {
+                    resolve(ethers);
+                } else {
+                    const interval = setInterval(() => {
+                        if (typeof ethers !== "undefined") {
+                            clearInterval(interval);
+                            resolve(ethers);
+                        }
+                    }, 500);
+                    setTimeout(() => {
+                        clearInterval(interval);
+                        reject(new Error("ethers.js não carregou a tempo."));
+                    }, 10000); // Tempo limite de 10 segundos
+                }
+            });
+        }
+
+        // Conectar à carteira
+        async function connectWallet() {
+            const selectedWallet = walletSelect.value;
+            try {
+                // Verifica se ethers.js está carregado
+                await waitForEthers();
+                const ethereum = await waitForWallet();
+
+                if (!ethereum) {
+                    message.textContent = `Carteira ${selectedWallet} não detectada. Instale ou ative a extensão!`;
+                    return;
+                }
+
+                const accounts = await ethereum.request({ method: "eth_requestAccounts" });
+                if (accounts.length === 0) {
+                    message.textContent = "Autorize a conexão na carteira!";
+                    return;
+                }
+
+                provider = new ethers.providers.Web3Provider(ethereum);
+                signer = provider.getSigner();
+                contract = new ethers.Contract(contractAddress, contractABI, signer);
+
+                // Verifica a rede (ajuste o Chain ID para a Monad testnet)
+                const network = await provider.getNetwork();
+                const expectedChainId = 1234; // Substitua pelo Chain ID correto
+                if (network.chainId !== expectedChainId) {
+                    message.textContent = `Mude para a testnet da Monad (Chain ID: ${expectedChainId})!`;
+                    return;
+                }
+
+                startButton.disabled = false;
+                await updateWins();
+                message.textContent = "Carteira conectada! Clique em Iniciar Jogo!";
+            } catch (error) {
+                console.error("Erro ao conectar:", error);
+                message.textContent = `Erro: ${error.message || "Tente novamente."}`;
+                if (error.message.includes("Carteira não carregou")) {
+                    message.textContent += ` Ative a extensão ${selectedWallet} e recarregue a página.`;
+                } else if (error.message.includes("ethers.js não carregou")) {
+                    message.textContent += ` Verifique sua conexão com a internet e recarregue.`;
+                }
+            }
+        }
+
+        // Atualiza o número de vitórias
+        async function updateWins() {
+            if (contract) {
+                try {
+                    wins = await contract.playerWins(await signer.getAddress());
+                    winsDisplay.textContent = `Vitórias: ${wins}`;
+                    claimRewardButton.disabled = wins < 5;
+                } catch (error) {
+                    console.error("Erro ao atualizar vitórias:", error);
+                    message.textContent = `Erro ao atualizar vitórias: ${error.message}`;
+                }
+            }
+        }
+
+        // Cria o tabuleiro
+        function createBoard() {
+            board.innerHTML = "";
+            cells = [];
+            for (let i = 0; i < 9; i++) {
+                const cell = document.createElement("div");
+                cell.classList.add("cell");
+                cell.dataset.index = i;
+                cell.addEventListener("click", handleCellClick);
+                board.appendChild(cell);
+                cells.push(cell);
+            }
+        }
+
+        // Lógica do clique na célula
+        async function handleCellClick(event) {
+            if (!gameActive || currentPlayer !== "X") return;
+            const cell = event.target;
+            if (cell.textContent !== "") return;
+            cell.textContent = currentPlayer;
+            if (checkWin()) {
+                message.textContent = `Jogador ${currentPlayer} venceu!`;
+                gameActive = false;
+                await recordWinOnBlockchain();
+                increaseLevel();
+                await updateWins();
+            } else if (checkDraw()) {
+                message.textContent = "Empate!";
+                gameActive = false;
+                increaseLevel();
+            } else {
+                currentPlayer = "O";
+                setTimeout(computerMove, 500);
+            }
+        }
+
+        // Movimento do computador
+        function computerMove() {
+            if (!gameActive) return;
+            const emptyCells = cells
+                .map((cell, index) => (cell.textContent === "" ? index : null))
+                .filter(index => index !== null);
+            const move = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+            cells[move].textContent = "O";
+            if (checkWin()) {
+                message.textContent = "Computador venceu!";
+                gameActive = false;
+                increaseLevel();
+            } else if (checkDraw()) {
+                message.textContent = "Empate!";
+                gameActive = false;
+                increaseLevel();
+            } else {
+                currentPlayer = "X";
+                message.textContent = "Sua vez! (X)";
+            }
+        }
+
+        // Verifica vitória
+        function checkWin() {
+            const winConditions = [
+                [0, 1, 2], [3, 4, 5], [6, 7, 8],
+                [0, 3, 6], [1, 4, 7], [2, 5, 8],
+                [0, 4, 8], [2, 4, 6]
+            ];
+            return winConditions.some(condition => {
+                const [a, b, c] = condition;
+                return cells[a].textContent && cells[a].textContent === cells[b].textContent && cells[a].textContent === cells[c].textContent;
+            });
+        }
+
+        // Verifica empate
+        function checkDraw() {
+            return cells.every(cell => cell.textContent !== "");
+        }
+
+        // Aumenta o nível
+        function increaseLevel() {
+            if (level < 50) {
+                level++;
+                levelDisplay.textContent = `Nível: ${level}`;
+            }
+        }
+
+        // Paga a taxa de entrada
+        async function payEntryFee() {
+            if (!contract) {
+                message.textContent = "Conecte a carteira primeiro!";
+                return false;
+            }
+            try {
+                const tx = await contract.payEntryFee(level, { value: ethers.utils.parseEther("0.01") });
+                await tx.wait();
+                return true;
+            } catch (error) {
+                console.error("Erro ao pagar taxa:", error);
+                message.textContent = `Erro ao pagar taxa: ${error.message}`;
+                return false;
+            }
+        }
+
+        // Registra vitória na blockchain
+        async function recordWinOnBlockchain() {
+            if (!contract) return;
+            try {
+                const tx = await contract.recordWin(await signer.getAddress(), level);
+                await tx.wait();
+                message.textContent += " Vitória registrada!";
+            } catch (error) {
+                console.error("Erro ao registrar vitória:", error);
+                message.textContent = `Erro ao registrar vitória: ${error.message}`;
+            }
+        }
+
+        // Resgata recompensa
+        claimRewardButton.addEventListener("click", async () => {
+            if (!contract || wins < 5) return;
+            try {
+                const tx = await contract.claimReward();
+                await tx.wait();
+                message.textContent = "Recompensa resgatada!";
+                await updateWins();
+            } catch (error) {
+                console.error("Erro ao resgatar:", error);
+                message.textContent = `Erro ao resgatar: ${error.message}`;
+            }
+        });
+
+        // Inicia o jogo
+        async function startGame() {
+            const paid = await payEntryFee();
+            if (!paid) return;
+            createBoard();
+            gameActive = true;
+            currentPlayer = "X";
+            message.textContent = "Sua vez! (X)";
+        }
+
+        // Listeners de eventos
+        connectWalletButton.addEventListener("click", connectWallet);
+        startButton.addEventListener("click", startGame);
+
+        // Inicializa o tabuleiro vazio
+        createBoard();
+    </script>
+</body>
+</html>
